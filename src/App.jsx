@@ -8,10 +8,11 @@ export default function App() {
     containerId: '',
     tareWeight: '',
   });
+  const [apiKey, setApiKey] = useState(''); // State to hold the API key
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const uploadFileInputRef = useRef(null);
-  const scanFileInputRef = useRef(null); // Ref for the camera input
+  const scanFileInputRef = useRef(null);
 
   // Handles changes in the text inputs
   const handleInputChange = (e) => {
@@ -24,7 +25,7 @@ export default function App() {
     new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result.split(',')[1]); // Get only the base64 part
+      reader.onload = () => resolve(reader.result.split(',')[1]);
       reader.onerror = (error) => reject(error);
     });
 
@@ -33,12 +34,16 @@ export default function App() {
     const file = e.target.files[0];
     if (!file) return;
 
+    if (!apiKey) {
+      setError("Please enter your Google Gemini API key to proceed.");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
       const base64ImageData = await fileToBase64(file);
-      const apiKey = ""; // API key is handled by the environment
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
       const payload = {
@@ -64,7 +69,8 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`);
+        const errorBody = await response.json();
+        throw new Error(`API Error: ${errorBody.error?.message || response.statusText}`);
       }
 
       const result = await response.json();
@@ -75,7 +81,6 @@ export default function App() {
         let finalContainerId = '';
         let finalTareWeight = '';
 
-        // --- Find and Format Container ID ---
         const cleanedText = rawText.replace(/\s+/g, '');
         const containerIdRegex = /[A-Z]{4}\d{7}/;
         const idMatch = cleanedText.match(containerIdRegex);
@@ -83,7 +88,6 @@ export default function App() {
           finalContainerId = idMatch[0];
         }
         
-        // --- Find and Format Tare Weight ---
         const lines = rawText.split('\n');
         const tareLine = lines.find(line => line.toUpperCase().includes('TARE'));
         if (tareLine) {
@@ -93,74 +97,71 @@ export default function App() {
           }
         }
 
-        // Update the form data state
         setFormData((prev) => ({
           ...prev,
           all: rawText,
           containerId: finalContainerId,
           tareWeight: finalTareWeight,
         }));
-
       } else {
-        throw new Error("Could not extract text from the image.");
+        throw new Error("Could not extract text. The image might be unclear or empty.");
       }
     } catch (err) {
-      setError(err.message || "An unexpected error occurred.");
+      setError(err.message || "An unexpected error occurred. Check your network and API key.");
       console.error(err);
     } finally {
       setIsLoading(false);
-      // Reset file input to allow processing a new image
       e.target.value = null;
     }
   };
 
-
   return (
-    <div className="bg-gray-100 min-h-screen flex items-center justify-center font-sans">
+    <div className="bg-gray-100 min-h-screen flex items-center justify-center font-sans p-4">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-lg">
         
-        {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-center text-gray-800">Container Information</h1>
-          <p className="text-center text-gray-500">Enter details manually or upload an image.</p>
+          <p className="text-center text-gray-500">Enter details or scan an image.</p>
         </div>
 
-        {/* Form Inputs */}
         <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-          {/* Manual Input */}
+          {/* API Key Input */}
           <div>
-            <label htmlFor="manual" className="block text-sm font-medium text-gray-700">
-              Manual
+            <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700">
+              Google Gemini API Key
             </label>
             <input
-              type="text"
-              id="manual"
-              name="manual"
-              value={formData.manual}
-              onChange={handleInputChange}
+              type="password"
+              id="apiKey"
+              name="apiKey"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
               className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="Enter manual data"
+              placeholder="Paste your API key here"
             />
+             <p className="mt-1 text-xs text-gray-500">
+              Get your free key from Google AI Studio.
+            </p>
           </div>
+          
+          <hr/>
 
-          {/* All Input */}
           <div>
             <label htmlFor="all" className="block text-sm font-medium text-gray-700">
-              All (Raw OCR Output)
+              Raw OCR Output
             </label>
             <textarea
               id="all"
               name="all"
               value={formData.all}
               onChange={handleInputChange}
-              rows={6}
-              className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              rows={4}
+              className="mt-1 block w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               placeholder="Extracted text will appear here..."
               readOnly
             />
           </div>
 
-          {/* ContainerID Input */}
           <div>
             <label htmlFor="containerId" className="block text-sm font-medium text-gray-700">
               Container ID
@@ -176,7 +177,6 @@ export default function App() {
             />
           </div>
 
-          {/* Tare Weight Input */}
           <div>
             <label htmlFor="tareWeight" className="block text-sm font-medium text-gray-700">
               Tare Weight (KGS)
@@ -193,18 +193,21 @@ export default function App() {
           </div>
         </form>
 
-        {/* Action Buttons and Status */}
         <div className="space-y-4 pt-2">
-            {error && <p className="text-center text-sm text-red-600">{error}</p>}
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative" role="alert">
+                <strong className="font-bold">Error: </strong>
+                <span className="block sm:inline">{error}</span>
+              </div>
+            )}
 
-            {/* Hidden file inputs */}
             <input
                 type="file"
                 ref={scanFileInputRef}
                 onChange={handleImageUpload}
                 style={{ display: 'none' }}
                 accept="image/*"
-                capture="environment" // Use the device's rear camera
+                capture="environment"
             />
             <input
                 type="file"
