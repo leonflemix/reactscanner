@@ -10,7 +10,8 @@ export default function App() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const fileInputRef = useRef(null);
+  const uploadFileInputRef = useRef(null);
+  const scanFileInputRef = useRef(null); // Ref for the camera input
 
   // Handles changes in the text inputs
   const handleInputChange = (e) => {
@@ -27,7 +28,7 @@ export default function App() {
       reader.onerror = (error) => reject(error);
     });
 
-  // Processes the uploaded image
+  // Processes the uploaded image from either button
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -44,7 +45,7 @@ export default function App() {
         contents: [
           {
             parts: [
-              { text: "Extract the container ID from this image. It usually follows a 4-letter, 7-digit format (e.g., MSDU2876414). Provide only the ID." },
+              { text: "Extract all visible text from the image. Preserve the original line breaks." },
               {
                 inlineData: {
                   mimeType: file.type,
@@ -70,9 +71,36 @@ export default function App() {
       const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (text) {
-        // Clean up the response and set the container ID
-        const containerId = text.trim().replace(/\s/g, ''); // Remove spaces
-        setFormData((prev) => ({ ...prev, containerId }));
+        const rawText = text.trim();
+        let finalContainerId = '';
+        let finalTareWeight = '';
+
+        // --- Find and Format Container ID ---
+        const cleanedText = rawText.replace(/\s+/g, '');
+        const containerIdRegex = /[A-Z]{4}\d{7}/;
+        const idMatch = cleanedText.match(containerIdRegex);
+        if (idMatch) {
+          finalContainerId = idMatch[0];
+        }
+        
+        // --- Find and Format Tare Weight ---
+        const lines = rawText.split('\n');
+        const tareLine = lines.find(line => line.toUpperCase().includes('TARE'));
+        if (tareLine) {
+          const numberMatch = tareLine.match(/[\d,.]+/);
+          if (numberMatch) {
+            finalTareWeight = numberMatch[0].replace(/\D/g, '');
+          }
+        }
+
+        // Update the form data state
+        setFormData((prev) => ({
+          ...prev,
+          all: rawText,
+          containerId: finalContainerId,
+          tareWeight: finalTareWeight,
+        }));
+
       } else {
         throw new Error("Could not extract text from the image.");
       }
@@ -81,7 +109,7 @@ export default function App() {
       console.error(err);
     } finally {
       setIsLoading(false);
-      // Reset file input to allow uploading the same file again
+      // Reset file input to allow processing a new image
       e.target.value = null;
     }
   };
@@ -118,16 +146,17 @@ export default function App() {
           {/* All Input */}
           <div>
             <label htmlFor="all" className="block text-sm font-medium text-gray-700">
-              All
+              All (Raw OCR Output)
             </label>
-            <input
-              type="text"
+            <textarea
               id="all"
               name="all"
               value={formData.all}
               onChange={handleInputChange}
+              rows={6}
               className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="Enter all data"
+              placeholder="Extracted text will appear here..."
+              readOnly
             />
           </div>
 
@@ -150,7 +179,7 @@ export default function App() {
           {/* Tare Weight Input */}
           <div>
             <label htmlFor="tareWeight" className="block text-sm font-medium text-gray-700">
-              Tare Weight
+              Tare Weight (KGS)
             </label>
             <input
               type="text"
@@ -159,7 +188,7 @@ export default function App() {
               value={formData.tareWeight}
               onChange={handleInputChange}
               className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., 4500 KG"
+              placeholder="e.g., 2100"
             />
           </div>
         </form>
@@ -167,31 +196,45 @@ export default function App() {
         {/* Action Buttons and Status */}
         <div className="space-y-4 pt-2">
             {error && <p className="text-center text-sm text-red-600">{error}</p>}
-            <div className="flex flex-col sm:flex-row gap-4">
-              <button
-                type="button"
-                className="w-full inline-flex justify-center py-3 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-                disabled
-              >
-                Scan
-              </button>
-               {/* Hidden file input */}
-              <input
+
+            {/* Hidden file inputs */}
+            <input
                 type="file"
-                ref={fileInputRef}
+                ref={scanFileInputRef}
                 onChange={handleImageUpload}
                 style={{ display: 'none' }}
                 accept="image/*"
-              />
+                capture="environment" // Use the device's rear camera
+            />
+            <input
+                type="file"
+                ref={uploadFileInputRef}
+                onChange={handleImageUpload}
+                style={{ display: 'none' }}
+                accept="image/*"
+            />
+
+            <div className="flex flex-col sm:flex-row gap-4">
               <button
                 type="button"
-                onClick={() => fileInputRef.current.click()}
+                onClick={() => scanFileInputRef.current.click()}
+                disabled={isLoading}
+                className="w-full inline-flex justify-center items-center py-3 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200 disabled:bg-indigo-400 disabled:cursor-not-allowed"
+              >
+                {isLoading ? 'Processing...' : 'Scan with Camera'}
+              </button>
+              <button
+                type="button"
+                onClick={() => uploadFileInputRef.current.click()}
                 disabled={isLoading}
                 className="w-full inline-flex justify-center items-center py-3 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200 disabled:bg-gray-200 disabled:cursor-not-allowed"
               >
                 {isLoading ? 'Processing...' : 'Upload Image'}
               </button>
             </div>
+             <p className="text-xs text-gray-500 text-center px-4">
+              <strong>Note:</strong> On a mobile device, 'Scan' should open the camera. In a desktop browser or this preview, it will open a file picker.
+            </p>
         </div>
 
       </div>
